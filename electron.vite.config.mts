@@ -27,7 +27,11 @@ const resolveAlias = {
 export default defineConfig(({ mode }) => {
   const isDev = mode === 'development';
 
-  const mainAndPreloadExcludes = ['electron', 'custom-electron-prompt', ...builtinModules];
+  // better-sqlite3 is a native module (a .node binary, not JS) — bundling it
+  // like a normal dependency rewrites its internal path to that binary
+  // relative to the bundle output instead of its real node_modules
+  // location, so it must stay external and be require()'d at runtime.
+  const mainAndPreloadExcludes = ['electron', 'custom-electron-prompt', 'better-sqlite3', ...builtinModules];
   const mainConfig: MainViteConfig = {
     plugins: [
       pluginLoader('backend'),

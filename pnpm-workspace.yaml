@@ -1,5 +1,6 @@
 minimumReleaseAge: 360
 allowBuilds:
+  better-sqlite3: true
   bufferutil: true
   electron: true
   electron-winstaller: true

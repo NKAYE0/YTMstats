@@ -1,0 +1,353 @@
+/* Every class is prefixed stats-engine- so this can never collide with
+   YouTube Music's own site styles, since the overlay lives in the same
+   page rather than an isolated window. */
+
+.stats-engine-trigger {
+  width: 40px;
+  height: 40px;
+  margin-left: 8px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 40px;
+  text-align: center;
+  padding: 0;
+}
+.stats-engine-trigger:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.stats-engine-page {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: #030303;
+  color: #f1f1f1;
+  overflow-y: auto;
+  font-family: Roboto, Arial, sans-serif;
+  /* The app uses -webkit-app-region: drag elsewhere (its nav bar) to let
+     the window be dragged by clicking empty space, and requires anything
+     interactive within a drag region to explicitly opt back out with
+     no-drag or it silently stops responding to hover/click. This overlay
+     is appended straight onto <body>, outside any of the app's own
+     no-drag rules, so it needs its own opt-out. */
+  -webkit-app-region: no-drag;
+  /* The in-app-menu plugin's title bar sits at z-index 10000000, above
+     this overlay, so its own height has to be added on top of our normal
+     padding or the header sits underneath it. Right padding is a bit
+     larger than the left — the header's right-aligned buttons otherwise
+     sit flush against the window's own edge, which turns into a real
+     dead zone if the window is ever sized wider than the screen. */
+  padding: calc(var(--menu-bar-height, 36px) + 24px) 72px 64px 48px;
+  box-sizing: border-box;
+}
+
+.stats-engine-page__header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.stats-engine-page__close {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: inherit;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  font-size: 16px;
+  flex: none;
+}
+.stats-engine-page__close:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.stats-engine-page__title {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.stats-engine-page__sync,
+.stats-engine-page__refresh {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: inherit;
+  border-radius: 18px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex: none;
+  white-space: nowrap;
+}
+.stats-engine-page__sync:hover:not(:disabled),
+.stats-engine-page__refresh:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+.stats-engine-page__sync:disabled,
+.stats-engine-page__refresh:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Groups the sync status text with the two buttons it's reporting on, and
+   pushes the whole group to the header's right edge (the margin-left:auto
+   moved here from the sync button itself, now that something else can sit
+   in front of it in DOM order). */
+.stats-engine-page__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.stats-engine-page__sync-status {
+  color: #aaaaaa;
+  font-size: 12px;
+  white-space: nowrap;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stats-engine-page__sync-status--error {
+  color: #e59a85;
+}
+
+/* Always-visible reminder of how the data is built up. Left edge lines up
+   with everything else on the page (section headings, tabs, the summary
+   line) — all sit directly in the page's own padding, with no extra
+   indent of their own. */
+.stats-engine-scope-banner {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(255, 200, 87, 0.08);
+  border: 1px solid rgba(255, 200, 87, 0.25);
+  color: #e8cf9c;
+  font-size: 13px;
+  max-width: 720px;
+}
+
+.stats-engine-page__summary {
+  color: #aaaaaa;
+  font-size: 14px;
+  margin: 4px 0 32px;
+}
+
+.stats-engine-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 20px 0 32px;
+}
+
+.stats-engine-tab {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f1f1f1;
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.stats-engine-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.stats-engine-tab--active {
+  background: #f1f1f1;
+  color: #030303;
+  border-color: #f1f1f1;
+}
+
+.stats-engine-section {
+  margin-bottom: 48px;
+}
+
+.stats-engine-section__eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #aaaaaa;
+  margin-bottom: 4px;
+}
+
+.stats-engine-section__title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 16px;
+}
+
+.stats-engine-empty {
+  color: #888888;
+  font-size: 13px;
+}
+
+/* Songs list */
+/* A real <a> link (see renderer.tsx) rather than a plain div, so it needs
+   the usual browser link styling reset — otherwise it'd render blue and
+   underlined. Artist/album cards stay plain divs (see the notes on those
+   below for why). */
+.stats-engine-song-row {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.stats-engine-song-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.stats-engine-song-row__thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: #222222;
+}
+
+.stats-engine-song-row__title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.stats-engine-song-row__meta {
+  color: #aaaaaa;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.stats-engine-song-row__album {
+  color: #aaaaaa;
+  font-size: 13px;
+  text-align: right;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Artist grid */
+.stats-engine-artist-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.stats-engine-artist {
+  width: 120px;
+  text-align: center;
+}
+/* Always clickable now (see renderer.tsx) — goes to the artist's real
+   channel page when a live play has recorded one, otherwise falls back
+   to searching their name. */
+.stats-engine-artist--linked {
+  cursor: pointer;
+}
+.stats-engine-artist--linked:hover .stats-engine-artist__name {
+  text-decoration: underline;
+}
+
+.stats-engine-artist__avatar {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #222222;
+  margin-bottom: 10px;
+}
+
+.stats-engine-artist__name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.stats-engine-artist__meta {
+  color: #aaaaaa;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Album grid */
+.stats-engine-album-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.stats-engine-album-card {
+  width: 160px;
+}
+/* Always clickable (see renderer.tsx) — there's no album id in this
+   app's data to link an exact page, so it searches "artist album name"
+   instead. */
+.stats-engine-album-card--linked {
+  cursor: pointer;
+}
+.stats-engine-album-card--linked:hover .stats-engine-album-card__title {
+  text-decoration: underline;
+}
+
+.stats-engine-album-card__thumb {
+  width: 160px;
+  height: 160px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #222222;
+  margin-bottom: 8px;
+}
+
+.stats-engine-album-card__title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.stats-engine-album-card__meta {
+  color: #aaaaaa;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Applied whenever a section has more than PAGE_SIZE entries (see
+   renderer.tsx) — regardless of whether it's currently collapsed or
+   expanded, not just while expanded. That matters: it's what makes the
+   section's on-screen height the same in both states, so pressing "View
+   all" only reveals a scrollbar rather than shrinking the box back down
+   to fit fewer rows. 650px is ten song rows exactly (10 × the 65px each
+   one takes: 48px thumbnail + 16px vertical padding + 1px border) — the
+   collapsed view fills it edge-to-edge with no scrollbar, and expanding
+   past ten rows scrolls within that same footprint instead of resizing
+   it. The artist/album grids reuse the same value; on a typical window
+   width ten of those wrap well within it too. */
+.stats-engine-list-scroll {
+  max-height: 650px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.stats-engine-view-more {
+  display: block;
+  margin: 12px 0 0;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f1f1f1;
+  border-radius: 16px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.stats-engine-view-more:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
