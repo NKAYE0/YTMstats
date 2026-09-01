@@ -485,6 +485,25 @@ export function importHistoryEntries(
   return { imported, duplicates };
 }
 
+/** All-time play count per video, for every video that's ever been
+ *  recorded — used to badge native song rows across the app (library,
+ *  playlists, search, queue) rather than the ranked/date-filtered lists
+ *  getSummary() builds. One flat map is cheap to fetch in full and cache
+ *  in the renderer, since `idx_plays_video_id` makes this a single
+ *  index-covered grouped scan. */
+export function getAllPlayCounts(): Record<string, number> {
+  const database = getDatabase();
+  const rows = database
+    .prepare('SELECT video_id, COUNT(*) as plays FROM plays GROUP BY video_id')
+    .all() as { video_id: string; plays: number }[];
+
+  const counts: Record<string, number> = {};
+  for (const row of rows) {
+    counts[row.video_id] = row.plays;
+  }
+  return counts;
+}
+
 export function closeDatabase() {
   db?.close();
   db = undefined;

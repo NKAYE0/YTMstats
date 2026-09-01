@@ -17,6 +17,7 @@ import { createBackend } from '@/utils';
 import { syncAccountHistory } from './account-history';
 import {
   closeDatabase,
+  getAllPlayCounts,
   getSummary,
   recordPlay,
   type StatsRange,
@@ -27,6 +28,7 @@ import type { BackendContext } from '@/types/contexts';
 
 const SUMMARY_CHANNEL = 'stats-engine:get-summary';
 const SYNC_ACCOUNT_HISTORY_CHANNEL = 'stats-engine:sync-account-history';
+const PLAY_COUNTS_CHANNEL = 'stats-engine:get-play-counts';
 
 // How often to re-poll YouTube Music's "Recently played" feed while the
 // app is running (covers roughly the last 24 hours — see
@@ -55,6 +57,12 @@ export const backend = createBackend<
       );
       return summary;
     });
+
+    // Backs the per-row "plays" badges injected across the app (library,
+    // playlists, search, queue) — see song-badges.ts. Separate from
+    // getSummary()'s ranked/date-filtered lists: this is every video's
+    // all-time count, in one flat map the renderer polls and caches.
+    ctx.ipc.handle(PLAY_COUNTS_CHANNEL, () => getAllPlayCounts());
 
     const runAccountHistorySync = async () => {
       try {
@@ -134,6 +142,7 @@ export const backend = createBackend<
   stop(ctx: BackendContext<StatsEngineConfig>) {
     ctx.ipc.removeHandler(SUMMARY_CHANNEL);
     ctx.ipc.removeHandler(SYNC_ACCOUNT_HISTORY_CHANNEL);
+    ctx.ipc.removeHandler(PLAY_COUNTS_CHANNEL);
     clearInterval(this.accountHistoryInterval);
     closeDatabase();
   },

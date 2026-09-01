@@ -60,10 +60,16 @@ ytmusic-app-layout > [slot='player-page'] {
   ) !important;
 }
 
+/* The height above is forced to make room for the in-app title bar, but
+   with no matching overflow rule, once the sidebar's content (playlists,
+   library entries) is taller than that calculated height it just gets
+   clipped at the window edge with no scrollbar — this restores the
+   sidebar's own scrolling within that shorter box. */
 ytmusic-guide-renderer {
   height: calc(
     100vh - var(--menu-bar-height) - var(--ytmusic-nav-bar-height)
   ) !important;
+  overflow-y: auto !important;
 }
 
 /* fix mini player behavior */

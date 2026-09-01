@@ -10,6 +10,8 @@ import { render } from 'solid-js/web';
 import { createRenderer } from '@/utils';
 import { waitForElement } from '@/utils/wait-for-element';
 
+import { startSongBadges } from './song-badges';
+
 import type { StatsEngineConfig } from './index';
 import type { StatsRange, StatsSummary } from './db';
 import type { RendererContext } from '@/types/contexts';
@@ -116,10 +118,19 @@ const songUrl = (videoId: string) =>
   `https://music.youtube.com/watch?v=${videoId}`;
 
 export const renderer = createRenderer<
-  { button?: HTMLButtonElement; container?: HTMLDivElement },
+  {
+    button?: HTMLButtonElement;
+    container?: HTMLDivElement;
+    stopSongBadges?: () => void;
+  },
   StatsEngineConfig
 >({
   async start(ctx: RendererContext<StatsEngineConfig>) {
+    // Independent of the overlay below — badges every native song row
+    // (library, playlists, search, queue) with its play count for as long
+    // as the app is open, whether or not "Your Stats" is ever opened.
+    this.stopSongBadges = startSongBadges(ctx);
+
     const [summary, setSummary] = createSignal<StatsSummary | null>(null);
     const [error, setError] = createSignal<string | null>(null);
     const [open, setOpen] = createSignal(false);
@@ -616,5 +627,6 @@ export const renderer = createRenderer<
   stop() {
     this.button?.remove();
     this.container?.remove();
+    this.stopSongBadges?.();
   },
 });
