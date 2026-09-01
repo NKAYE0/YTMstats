@@ -34,6 +34,24 @@ ytmusic-app-layout > [slot='nav-bar'],
     var(--ytmusic-nav-bar-height) + var(--menu-bar-height, 36px)
   ) !important;
 }
+/* The [is-bauhaus-sidenav-enabled] versions of these two rules push the
+   sidebar down to clear the in-app title bar, but only when that exact
+   attribute is present on <ytmusic-app> — if YouTube Music ever serves a
+   version where it isn't (a different sidenav mode, or the attribute got
+   renamed upstream), neither ever applies and the sidebar starts at the
+   very top of the window, overlapping the title bar instead of clearing
+   it — which matches what's actually being seen. These two are the same
+   offset without that attribute requirement, so the sidebar is always
+   pushed down regardless. A margin-top can only resolve to one value per
+   element, so this doesn't stack with the versions above when both
+   happen to match — it's just a fallback for when they don't. */
+#guide-spacer.ytmusic-app,
+#mini-guide-spacer.ytmusic-app {
+  margin-top: calc(
+    var(--ytmusic-nav-bar-height) + var(--menu-bar-height, 36px)
+  ) !important;
+}
+
 ytmusic-app[is-bauhaus-sidenav-enabled] #guide-spacer.ytmusic-app,
 ytmusic-app[is-bauhaus-sidenav-enabled] #mini-guide-spacer.ytmusic-app {
   margin-top: calc(
@@ -42,6 +60,15 @@ ytmusic-app[is-bauhaus-sidenav-enabled] #mini-guide-spacer.ytmusic-app {
 }
 
 @media (max-width: 935px) {
+  #guide-spacer.ytmusic-app {
+    margin-top: calc(var(--menu-bar-height, 36px)) !important;
+  }
+  #mini-guide-spacer.ytmusic-app {
+    margin-top: calc(
+      var(--ytmusic-nav-bar-height) + var(--menu-bar-height, 36px)
+    ) !important;
+  }
+
   ytmusic-app[is-bauhaus-sidenav-enabled] #guide-spacer.ytmusic-app {
     margin-top: calc(var(--menu-bar-height, 36px)) !important;
   }

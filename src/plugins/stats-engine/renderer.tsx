@@ -121,7 +121,7 @@ export const renderer = createRenderer<
   {
     button?: HTMLButtonElement;
     container?: HTMLDivElement;
-    stopSongBadges?: () => void;
+    songBadges?: ReturnType<typeof startSongBadges>;
   },
   StatsEngineConfig
 >({
@@ -129,7 +129,7 @@ export const renderer = createRenderer<
     // Independent of the overlay below — badges every native song row
     // (library, playlists, search, queue) with its play count for as long
     // as the app is open, whether or not "Your Stats" is ever opened.
-    this.stopSongBadges = startSongBadges(ctx);
+    this.songBadges = startSongBadges(ctx);
 
     const [summary, setSummary] = createSignal<StatsSummary | null>(null);
     const [error, setError] = createSignal<string | null>(null);
@@ -627,6 +627,14 @@ export const renderer = createRenderer<
   stop() {
     this.button?.remove();
     this.container?.remove();
-    this.stopSongBadges?.();
+    this.songBadges?.stop();
+  },
+
+  // Fires when the plugin's config changes anywhere — including the
+  // "Personal play count time frame" menu (see menu.ts) — so a change
+  // there is reflected on the next scan instead of waiting up to a
+  // minute for the periodic poll.
+  onConfigChange() {
+    this.songBadges?.refreshNow();
   },
 });

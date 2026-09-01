@@ -58,11 +58,19 @@ export const backend = createBackend<
       return summary;
     });
 
-    // Backs the per-row "plays" badges injected across the app (library,
+    // Backs the personal "plays" badges injected across the app (library,
     // playlists, search, queue) — see song-badges.ts. Separate from
-    // getSummary()'s ranked/date-filtered lists: this is every video's
-    // all-time count, in one flat map the renderer polls and caches.
-    ctx.ipc.handle(PLAY_COUNTS_CHANNEL, () => getAllPlayCounts());
+    // getSummary()'s ranked lists: this is one flat per-video map, over
+    // whatever window the user picked from the plugin's menu (Plugins >
+    // Listening Stats), read fresh on every request so a menu change
+    // takes effect on the renderer's next poll without a restart. `range`
+    // comes back alongside the counts so the renderer's tooltips can name
+    // the window they're for without duplicating this config read.
+    ctx.ipc.handle(PLAY_COUNTS_CHANNEL, async () => {
+      const config = await ctx.getConfig();
+      const range = config.playBadgeRange ?? 'week';
+      return { range, counts: getAllPlayCounts(range) };
+    });
 
     const runAccountHistorySync = async () => {
       try {
