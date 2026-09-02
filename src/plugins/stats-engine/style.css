@@ -238,6 +238,30 @@
   text-overflow: ellipsis;
 }
 
+/* Small rank number pinned to a tile's own top-left corner — shared by
+   the artist and album grids, sitting on the transparent corner of an
+   artist's round avatar or right at the edge of an album's square
+   thumbnail. Positioned off .stats-engine-artist/.stats-engine-album-card
+   themselves (both `position: relative`) rather than off the image, so it
+   doesn't need its own wrapper element. */
+.stats-engine-rank-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #f1f1f1;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
 /* Artist grid */
 .stats-engine-artist-grid {
   display: flex;
@@ -246,8 +270,11 @@
 }
 
 .stats-engine-artist {
-  width: 120px;
+  width: 156px;
   text-align: center;
+  /* Anchors .stats-engine-rank-badge, which sits right on top of the
+     avatar's own top-left corner. */
+  position: relative;
 }
 /* Always clickable now (see renderer.tsx) — goes to the artist's real
    channel page when a live play has recorded one, otherwise falls back
@@ -260,8 +287,8 @@
 }
 
 .stats-engine-artist__avatar {
-  width: 110px;
-  height: 110px;
+  width: 148px;
+  height: 148px;
   border-radius: 50%;
   object-fit: cover;
   background: #222222;
@@ -288,6 +315,9 @@
 
 .stats-engine-album-card {
   width: 160px;
+  /* Anchors .stats-engine-rank-badge, which sits right on top of the
+     thumbnail's own top-left corner. */
+  position: relative;
 }
 /* Always clickable (see renderer.tsx) — there's no album id in this
    app's data to link an exact page, so it searches "artist album name"
@@ -319,7 +349,24 @@
   margin-top: 2px;
 }
 
-/* Applied whenever a section has more than PAGE_SIZE entries (see
+/* Shared by the artist and album grids' collapsed state (see renderer.tsx)
+   — a single row, clipped to whatever actually fits the container's real
+   width, rather than the old fixed slice of 10 that always left empty
+   space on a wide window. flex-wrap: nowrap means there's only ever one
+   row to begin with, so this doesn't need to know or guess a row's pixel
+   height the way clipping a wrapped grid down to "one row" would — the
+   overflow simply hides whatever doesn't fit on the line. Removed again
+   once expanded, which is what lets the grid wrap normally at that point
+   (see .stats-engine-list-scroll below).
+   Declared after .stats-engine-artist-grid/.stats-engine-album-grid on
+   purpose — same specificity as those, so this only wins the flex-wrap
+   tie-break by coming later in the file. Keep it below both. */
+.stats-engine-grid--row {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+/* Songs: applied whenever the list has more than PAGE_SIZE entries (see
    renderer.tsx) — regardless of whether it's currently collapsed or
    expanded, not just while expanded. That matters: it's what makes the
    section's on-screen height the same in both states, so pressing "View
@@ -328,8 +375,12 @@
    one takes: 48px thumbnail + 16px vertical padding + 1px border) — the
    collapsed view fills it edge-to-edge with no scrollbar, and expanding
    past ten rows scrolls within that same footprint instead of resizing
-   it. The artist/album grids reuse the same value; on a typical window
-   width ten of those wrap well within it too. */
+   it.
+   Artist/album grids: applied only once expanded (collapsed uses
+   .stats-engine-grid--row above instead, which needs the opposite —
+   nowrap, not a wrapped multi-row scroll box) — this is what caps how
+   tall "View all" can grow the grid before it scrolls instead of just
+   keeps getting taller. */
 .stats-engine-list-scroll {
   max-height: 650px;
   overflow-y: auto;

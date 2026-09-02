@@ -1,60 +1,29 @@
-<div align="center" markdown="1">
-   <sup>Special thanks to:</sup>
-   <br>
-   <br>
-   <a href="https://go.warp.dev/pear-desktop">
-      <img alt="Warp sponsorship" width="400" src="https://github.com/user-attachments/assets/8307ea56-e872-494a-8a9c-de0e296a06ed" />
-   </a>
-
-### [Warp, built for coding with multiple AI agents](https://go.warp.dev/pear-desktop)
-[Available for macOS, Linux, & Windows](https://go.warp.dev/pear-desktop)<br>
-
-</div>
-<hr>
-
 <div align="center">
 
-# :pear: Pear Desktop
+# YTMstats
 
-[![GitHub release](https://img.shields.io/github/release/pear-devs/pear-desktop.svg?style=for-the-badge)](https://github.com/pear-devs/pear-desktop/releases/)
-[![GitHub license](https://img.shields.io/github/license/pear-devs/pear-desktop.svg?style=for-the-badge)](https://github.com/pear-devs/pear-desktop/blob/master/license)
-[![eslint code style](https://img.shields.io/badge/code_style-eslint-5ed9c7.svg?style=for-the-badge)](https://github.com/pear-devs/pear-desktop/blob/master/eslint.config.mjs)
-[![Build status](https://img.shields.io/github/actions/workflow/status/pear-devs/pear-desktop/build.yml?branch=master&style=for-the-badge)](https://GitHub.com/pear-devs/pear-desktop/releases/)
-[![GitHub All Releases](https://img.shields.io/github/downloads/pear-devs/pear-desktop/total?style=for-the-badge)](https://GitHub.com/pear-devs/pear-desktop/releases/)
-<!--[![AUR](https://img.shields.io/aur/version/pear-desktop-bin?color=blueviolet&style=for-the-badge)](https://aur.archlinux.org/packages/pear-desktop-bin)-->
-[![Known Vulnerabilities](https://snyk.io/test/github/pear-devs/pear-desktop/badge.svg)](https://snyk.io/test/github/pear-devs/pear-desktop)
+_A personal fork of [Pear Desktop](https://github.com/pear-devs/pear-desktop), itself based on [th-ch/youtube-music](https://github.com/th-ch/youtube-music) — an Electron wrapper for YouTube Music with custom plugins._
 
 </div>
-
-<!--![Screenshot](web/screenshot.png "Screenshot")-->
-
-- Native look & feel extension
 
 > [!IMPORTANT]
 > ⚠️ Disclaimer
 >
 > **No Affiliation**
 >
-> This project, and its contributors, are not affiliated with, authorized by, endorsed by, or in any way officially connected with Google LLC, YouTube, or any of their subsidiaries or affiliates. **This is an independent, non-profit, and unofficial extension developed by a team of volunteers with the goal of providing a desktop experience.**
+> This project is not affiliated with, authorized by, endorsed by, or in any way officially connected with Google LLC, YouTube, or any of their subsidiaries or affiliates. **This is an independent, unofficial, personal fork, built for personal use.**
 >
 > **Trademarks**
 >
-> The names "Google" and "YouTube Music", as well as related names, marks, emblems, and images, are registered trademarks of their respective owners. Any use of these trademarks is for identification and reference purposes only and does not imply any association with the trademark holder. We have no intention of infringing upon these trademarks or causing harm to the trademark holders.
+> The names "Google" and "YouTube Music", as well as related names, marks, emblems, and images, are registered trademarks of their respective owners. Any use of these trademarks is for identification and reference purposes only and does not imply any association with the trademark holder.
 >
 > **Limitation of Liability**
 >
-> This application (extension) is provided "AS IS", and you use it at your own risk. In no event shall the developers or contributors be liable for any claim, damages, or other liability, including any legal consequences, arising from, out of, or in connection with the software or the use or other dealings in the software. The responsibility for any and all outcomes of using this software rests entirely with the user.
+> This application is provided "AS IS", used at your own risk. In no event shall the developers or contributors be liable for any claim, damages, or other liability arising from, out of, or in connection with the software or the use or other dealings in the software.
 
 ## Content
 
-- [Features](#features)
-- [Translation](#translation)
-- [Download](#download)
-  - [Arch Linux](#arch-linux)
-  - [Solus](#solus)
-  - [MacOS](#macos)
-  - [Windows](#windows)
-    - [How to install without a network connection? (in Windows)](#how-to-install-without-a-network-connection-in-windows)
+- [Custom plugins & fixes](#custom-plugins--fixes)
 - [Themes](#themes)
 - [Dev](#dev)
 - [Build your own plugins](#build-your-own-plugins)
@@ -66,75 +35,13 @@
 - [License](#license)
 - [FAQ](#faq)
 
-## Translation
+## Custom plugins & fixes
 
-You can help with translation on [Hosted Weblate](https://bit.ly/48n5YF7).
+Beyond the standard plugin set inherited from Pear Desktop / th-ch/youtube-music, this fork adds:
 
-<a href="https://bit.ly/48n5YF7">
-  <img src="https://bit.ly/4q83L6S" alt="translation status" />
-  <img src="https://bit.ly/4h3zBxo" alt="translation status 2" />
-</a>
+- **Listening Stats** — tracks what you listen to locally (nothing leaves the device) and shows it back to you: a "Your Stats" page with ranked Top Songs / Top Artists / Top Albums across day/week/month/year/all-time windows, plus personal (🎧) and global (🌐) play-count badges on every song row across the app (library, playlists, search, queue). Builds up automatically from live playback plus a periodic background sync of YouTube Music's own "Recently played." See [`src/plugins/stats-engine/README.md`](src/plugins/stats-engine/README.md) for the full write-up.
 
-## Download
-
-You can check out the [latest release](https://github.com/pear-devs/pear-desktop/releases/latest) to quickly find the
-latest version.
-
-### Arch Linux
-
-Install the [`pear-desktop`](https://aur.archlinux.org/packages/pear-desktop) package from the AUR. For AUR installation instructions, take a look at
-this [wiki page](https://wiki.archlinux.org/index.php/Arch_User_Repository#Installing_packages).
-
-### [Solus](https://getsol.us/)
-
-```bash
-sudo eopkg install pear-desktop
-```
-
-### macOS
-
-You can install the app using Homebrew (see the [cask definition](https://github.com/pear-devs/homebrew-pear)):
-
-```bash
-brew install pear-devs/pear/pear-desktop
-```
-
-If you install the app manually and get an error "is damaged and can’t be opened." when launching the app, run the following in the Terminal:
-
-```bash
-/usr/bin/xattr -cr /Applications/Pear\ Desktop.app
-```
-
-### Windows
-
-You can use the [Scoop package manager](https://scoop.sh) to install the `pear-desktop` package from
-the [`extras` bucket](https://github.com/ScoopInstaller/Extras).
-
-```bash
-scoop bucket add extras
-scoop install extras/pear-desktop
-```
-
-Alternately you can use [Winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/), Windows 11s
-official CLI package manager to install the `pear-devs.pear-desktop` package.
-
-*Note: Microsoft Defender SmartScreen might block the installation since it is from an "unknown publisher". This is also
-true for the manual installation when trying to run the executable(.exe) after a manual download here on github (same
-file).*
-
-```bash
-winget install pear-devs.pear-desktop
-```
-
-#### How to install without a network connection? (in Windows)
-
-- Download the `*.nsis.7z` file for _your device architecture_ in [release page](https://github.com/pear-devs/pear-desktop/releases/latest).
-  - `x64` for 64-bit Windows
-  - `ia32` for 32-bit Windows
-  - `arm64` for ARM64 Windows
-- Download installer in release page. (`*-Setup.exe`)
-- Place them in the **same directory**.
-- Run the installer.
+It also includes a fix to the in-app title bar (`src/plugins/in-app-menu`) for a sidebar-overlap bug: the offset that pushes the sidebar down to clear the title bar was gated behind an `[is-bauhaus-sidenav-enabled]` attribute on `<ytmusic-app>`. When that attribute isn't present, the offset never applied — the sidebar started under the title bar (overlapping it) while its height was still calculated as if the offset had happened, leaving blank space at the bottom instead of scrolling. The same offset is now also applied unconditionally as a fallback, so the sidebar sits correctly whether or not that attribute is present.
 
 ## Themes
 
@@ -145,15 +52,15 @@ Some predefined themes are available in https://github.com/kerichdev/themes-for-
 ## Dev
 
 ```bash
-git clone https://github.com/pear-devs/pear-desktop
-cd pear-desktop
+git clone https://github.com/NKAYE0/YTMstats
+cd YTMstats
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
 Instead of installing pnpm on your system, you can also use [devcontainers](https://containers.dev/). You can use devcontainers either as a development environment in VS Code, or as a way to easily build the project without installing dependencies on your host system.
 
-Note that this has it's own limitations (for example, GUI doesn't work on, at least some, Linux hosts).
+Note that this has its own limitations (for example, GUI doesn't work on, at least some, Linux hosts).
 
 ## Build your own plugins
 
@@ -174,7 +81,7 @@ import { createPlugin } from '@/utils';
 
 export default createPlugin({
   name: 'Plugin Label',
-  restartNeeded: true, // if value is true, ytmusic show restart dialog
+  restartNeeded: true, // if value is true, the app shows a restart dialog
   config: {
     enabled: false,
   }, // your custom config
@@ -244,7 +151,7 @@ import { createPlugin } from '@/utils';
 
 export default createPlugin({
   name: 'Plugin Label',
-  restartNeeded: true, // if value is true, pear-desktop will show a restart dialog
+  restartNeeded: true, // if value is true, the app shows a restart dialog
   config: {
     enabled: false,
   }, // your custom config
@@ -260,7 +167,7 @@ import { createPlugin } from '@/utils';
 
 export default createPlugin({
   name: 'Plugin Label',
-  restartNeeded: true, // if value is true, ytmusic will show the restart dialog
+  restartNeeded: true, // if value is true, the app shows a restart dialog
   config: {
     enabled: false,
   }, // your custom config
@@ -288,7 +195,7 @@ export default createPlugin({
 - `pnpm dist:mac:arm64` - macOS (arm64)
 
 Builds the app for macOS, Linux, and Windows,
-using [electron-builder](https://github.com/electron-userland/electron-builder).
+using [electron-builder](https://github.com/electron-userland/electron-builder). Built installers land in `pack/`.
 
 ### Building in devcontainer
 
@@ -316,7 +223,7 @@ Uses [Playwright](https://playwright.dev/) to test the app.
 
 ## License
 
-MIT © [pear-devs](https://github.com/pear-devs/pear-desktop)
+MIT — based on [Pear Desktop](https://github.com/pear-devs/pear-desktop) and [th-ch/youtube-music](https://github.com/th-ch/youtube-music); see [`license`](license) for the full text and original copyright.
 
 ## FAQ
 

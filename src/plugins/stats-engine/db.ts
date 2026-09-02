@@ -257,6 +257,104 @@ function rangeStart(range: StatsRange): number | null {
   }
 }
 
+type ArtistRow = {
+  artist: string;
+  plays: number;
+  seconds: number;
+  lastPlayedAt: number;
+  imageSrc: string | null;
+  artistUrl: string | null;
+};
+
+/** Merges rows that are the same real artist recorded under more than one
+ *  spelling — confirmed live in an actual database: "Björk" and "Bjork"
+ *  (one missing the diacritic entirely, not just a different Unicode
+ *  encoding of it — so no amount of string normalizing would have caught
+ *  it) showed up as two separate `topArtists` entries, each with its own
+ *  handful of plays under a different source, but both carrying the exact
+ *  same `artist_url` channel id on at least one of their rows. Grouping by
+ *  the raw text (as the SQL above does, cheaply, via the artist index)
+ *  can't merge those; this second pass does it properly by the one field
+ *  that's actually stable across spellings — the channel id — leaving any
+ *  row with no known `artistUrl` at all ungrouped, since there's nothing
+ *  reliable to match it on. Whichever contributing row was played most
+ *  recently lends its spelling and thumbnail to the merged entry, on the
+ *  theory that's the most likely to be a correct, current reading of the
+ *  name rather than an older import's one-off. */
+function mergeArtistsByUrl(rows: ArtistRow[]): ArtistRow[] {
+  const merged = new Map<string, ArtistRow>();
+  const unmatched: ArtistRow[] = [];
+
+  for (const row of rows) {
+    if (!row.artistUrl) {
+      unmatched.push(row);
+      continue;
+    }
+    const existing = merged.get(row.artistUrl);
+    if (!existing) {
+      merged.set(row.artistUrl, { ...row });
+      continue;
+    }
+    existing.plays += row.plays;
+    existing.seconds += row.seconds;
+    if (row.lastPlayedAt > existing.lastPlayedAt) {
+      existing.lastPlayedAt = row.lastPlayedAt;
+      existing.artist = row.artist;
+      existing.imageSrc = row.imageSrc ?? existing.imageSrc;
+    }
+  }
+
+  return [...merged.values(), ...unmatched].sort((a, b) => b.plays - a.plays);
+}
+
+const normalize = (text: string) => text.trim().toLowerCase();
+
+type AlbumRow = {
+  album: string;
+  artist: string;
+  plays: number;
+  seconds: number;
+  lastPlayedAt: number;
+  imageSrc: string | null;
+  artistUrl: string | null;
+};
+
+/** Same fix as mergeArtistsByUrl above, applied to albums — the exact same
+ *  "Bjork" vs "Björk" spelling split also splits an artist's albums, since
+ *  `topAlbums` groups by the same raw `artist` text (confirmed live: a
+ *  real database had "Post" split into a 2-play "Bjork" row and a 4-play
+ *  "Björk" row instead of one 6-play entry). Keyed by album *and*
+ *  artistUrl together, since the artist channel id alone doesn't say which
+ *  of their albums a row belongs to. Rows with no known artistUrl are left
+ *  ungrouped, same reasoning as the artist merge. */
+function mergeAlbumsByArtistUrl(rows: AlbumRow[]): AlbumRow[] {
+  const merged = new Map<string, AlbumRow>();
+  const unmatched: AlbumRow[] = [];
+
+  for (const row of rows) {
+    if (!row.artistUrl) {
+      unmatched.push(row);
+      continue;
+    }
+    const key = `${normalize(row.album)}|${row.artistUrl}`;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...row });
+      continue;
+    }
+    existing.plays += row.plays;
+    existing.seconds += row.seconds;
+    if (row.lastPlayedAt > existing.lastPlayedAt) {
+      existing.lastPlayedAt = row.lastPlayedAt;
+      existing.album = row.album;
+      existing.artist = row.artist;
+      existing.imageSrc = row.imageSrc ?? existing.imageSrc;
+    }
+  }
+
+  return [...merged.values(), ...unmatched].sort((a, b) => b.plays - a.plays);
+}
+
 /**
  * Summary for one recap window — the same shape for all-time and for a
  * single day/week/month/year, just with a different `since` bound. Every
@@ -286,7 +384,10 @@ export function getSummary(
     )
     .get({ since }) as { totalPlays: number; totalSeconds: number };
 
-  const topArtists = database
+  // Grouped by the raw `artist` text first, unbounded — merged by channel
+  // below before `limit` is ever applied, since the same real artist can
+  // be split across more than one text group here (see mergeArtistsByUrl).
+  const topArtistsByText = database
     .prepare(
       `SELECT artist,
               COUNT(*) as plays,
@@ -301,10 +402,9 @@ export function getSummary(
        FROM plays
        WHERE (@since IS NULL OR played_at >= @since)
        GROUP BY artist
-       ORDER BY plays DESC
-       LIMIT @limit`,
+       ORDER BY plays DESC`,
     )
-    .all({ since, limit: rowLimit }) as {
+    .all({ since }) as {
     artist: string;
     plays: number;
     seconds: number;
@@ -312,6 +412,10 @@ export function getSummary(
     imageSrc: string | null;
     artistUrl: string | null;
   }[];
+  const topArtists = mergeArtistsByUrl(topArtistsByText).slice(
+    0,
+    limit === null ? undefined : limit,
+  );
 
   const topSongs = database
     .prepare(
@@ -337,7 +441,10 @@ export function getSummary(
     imageSrc: string | null;
   }[];
 
-  const topAlbums = database
+  // Unbounded and merged by artist channel before `limit` is applied, same
+  // reasoning as topArtists above — the same artist-spelling split shows up
+  // here too, since this also groups by the raw `artist` text.
+  const topAlbumsByText = database
     .prepare(
       `SELECT album, artist,
               COUNT(*) as plays,
@@ -345,21 +452,28 @@ export function getSummary(
               MAX(played_at) as lastPlayedAt,
               (SELECT image_src FROM plays p2
                  WHERE p2.album = plays.album AND p2.artist = plays.artist AND p2.image_src IS NOT NULL
-                 ORDER BY p2.played_at DESC LIMIT 1) as imageSrc
+                 ORDER BY p2.played_at DESC LIMIT 1) as imageSrc,
+              (SELECT artist_url FROM plays p2
+                 WHERE p2.artist = plays.artist AND p2.artist_url IS NOT NULL
+                 ORDER BY p2.played_at DESC LIMIT 1) as artistUrl
        FROM plays
        WHERE album IS NOT NULL AND album != '' AND (@since IS NULL OR played_at >= @since)
        GROUP BY album, artist
-       ORDER BY plays DESC
-       LIMIT @limit`,
+       ORDER BY plays DESC`,
     )
-    .all({ since, limit: rowLimit }) as {
+    .all({ since }) as {
     album: string;
     artist: string;
     plays: number;
     seconds: number;
     lastPlayedAt: number;
     imageSrc: string | null;
+    artistUrl: string | null;
   }[];
+  const topAlbums = mergeAlbumsByArtistUrl(topAlbumsByText).slice(
+    0,
+    limit === null ? undefined : limit,
+  );
 
   return {
     totalPlays: totals.totalPlays,

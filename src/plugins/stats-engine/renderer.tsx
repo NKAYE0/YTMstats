@@ -4,7 +4,7 @@
 // "add a page" mechanism in this codebase, so this is a full-viewport
 // overlay rather than real browser navigation — simplest thing that gives
 // real space to work with, without a second window/build entry.
-import { createSignal, For, Show } from 'solid-js';
+import { createSignal, For, onCleanup, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 
 import { createRenderer } from '@/utils';
@@ -65,8 +65,53 @@ function timeAgo(ms: number): string {
 // the backend query is unbounded (see getSummary in db.ts) — rendering
 // hundreds of rows up front is what causes real lag, not just a long
 // page, so each section starts collapsed to this many and only renders
-// the rest once "View all" is pressed.
+// the rest once "View all" is pressed. Also the threshold for showing the
+// "View all" button at all, for every section — including the artist/
+// album grids, which otherwise size their own collapsed count off actual
+// available width instead of this constant (see createRowFitCount below).
 const PAGE_SIZE = 10;
+
+// The artist/album grids' collapsed view doesn't slice to a fixed count —
+// see createRowFitCount below, which measures the real row and figures
+// out exactly how many whole tiles fit. This is just the count used for
+// that very first render, before the ResizeObserver it sets up has had a
+// chance to fire once — low enough that it can never overflow into a
+// second row even on a narrow window, so there's nothing to visually
+// snap into place once the real measurement lands a moment later.
+const INITIAL_ROW_COUNT = 4;
+
+// Backs the artist/album grids' collapsed view: watches the grid
+// element's own width and reports how many fixed-width tiles (each
+// `itemWidth` px wide, `gap` px between them) actually fit across it,
+// updating live if the window is resized. Read together with a plain
+// array `.slice(0, count())` (see renderer JSX below) — that's what
+// makes the collapsed row end on the last *whole* tile instead of
+// clipping a partial one at the edge the way relying on CSS overflow
+// alone did. Called from inside the `<Show when={summary()}>` this
+// plugin's grids live in, so its ResizeObserver gets disconnected via
+// onCleanup whenever that's torn down (the page closing, mainly) rather
+// than accumulating one per open.
+function createRowFitCount(itemWidth: number, gap: number) {
+  const [count, setCount] = createSignal(INITIAL_ROW_COUNT);
+  let observer: ResizeObserver | undefined;
+
+  const update = (width: number) => {
+    const fit = Math.floor((width + gap) / (itemWidth + gap));
+    setCount(Math.max(fit, 1));
+  };
+
+  const ref = (el: HTMLDivElement) => {
+    update(el.clientWidth);
+    observer = new ResizeObserver(([entry]) => {
+      if (entry) update(entry.contentRect.width);
+    });
+    observer.observe(el);
+  };
+
+  onCleanup(() => observer?.disconnect());
+
+  return { ref, count };
+}
 
 // Minutes shown as "5h 40m" once there's over an hour of it — a raw minute
 // count is unreadable once a range covers real listening time (e.g. "2416
@@ -231,10 +276,19 @@ export const renderer = createRenderer<
         const result = (await app.networkManager.fetch('/search', {
           query,
         })) as any;
-        const nav =
+        const sections =
           result?.contents?.tabbedSearchResultsRenderer?.tabs?.[0]
-            ?.tabRenderer?.content?.sectionListRenderer?.contents?.[0]
-            ?.musicCardShelfRenderer?.title?.runs?.[0]?.navigationEndpoint;
+            ?.tabRenderer?.content?.sectionListRenderer?.contents ?? [];
+        // The card is usually sections[0], but not always — confirmed live
+        // (see song-badges.ts's findCardShelf) a "Did you mean: ..."
+        // spelling-suggestion section can occupy that slot instead,
+        // pushing the actual card to index 1. Scanning for it rather than
+        // assuming a fixed position is what makes this reliable.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cardShelf = (sections as any[]).find(
+          (section) => section?.musicCardShelfRenderer,
+        )?.musicCardShelfRenderer;
+        const nav = cardShelf?.title?.runs?.[0]?.navigationEndpoint;
         const gotType =
           nav?.browseEndpoint?.browseEndpointContextSupportedConfigs
             ?.browseEndpointContextMusicConfig?.pageType;
@@ -370,8 +424,17 @@ export const renderer = createRenderer<
                 when={summary()}
                 fallback={<div class="stats-engine-empty">Loading…</div>}
               >
-                {(s) => (
-                  <>
+                {(s) => {
+                  // 156px/24px and 160px/20px match the tile width and
+                  // gap set on .stats-engine-artist/.stats-engine-artist-
+                  // grid and .stats-engine-album-card/.stats-engine-
+                  // album-grid in style.css — keep these two in sync with
+                  // that file if either tile size ever changes.
+                  const artistFit = createRowFitCount(156, 24);
+                  const albumFit = createRowFitCount(160, 20);
+
+                  return (
+                    <>
                     <div class="stats-engine-page__summary">
                       {s().totalPlays} plays · {formatDuration(s().totalMinutes)},{' '}
                       {RANGE_SUMMARY_SUFFIX[range()]}
@@ -388,7 +451,7 @@ export const renderer = createRenderer<
                           <div class="stats-engine-empty">
                             No plays recorded yet for this period — play
                             something for a while (past the halfway point, or
-                            4 minutes) and hit Refresh.
+                            1 minute) and hit Refresh.
                           </div>
                         }
                       >
@@ -470,9 +533,12 @@ export const renderer = createRenderer<
                         }
                       >
                         <div
+                          ref={artistFit.ref}
                           class="stats-engine-artist-grid"
                           classList={{
+                            'stats-engine-grid--row': !artistsExpanded(),
                             'stats-engine-list-scroll':
+                              artistsExpanded() &&
                               s().topArtists.length > PAGE_SIZE,
                           }}
                         >
@@ -480,10 +546,10 @@ export const renderer = createRenderer<
                             each={
                               artistsExpanded()
                                 ? s().topArtists
-                                : s().topArtists.slice(0, PAGE_SIZE)
+                                : s().topArtists.slice(0, artistFit.count())
                             }
                           >
-                            {(artist) => (
+                            {(artist, index) => (
                               <div
                                 class="stats-engine-artist stats-engine-artist--linked"
                                 on:click={() => {
@@ -497,6 +563,9 @@ export const renderer = createRenderer<
                                   }
                                 }}
                               >
+                                <div class="stats-engine-rank-badge">
+                                  {index() + 1}
+                                </div>
                                 <Show
                                   when={artist.imageSrc}
                                   fallback={
@@ -551,9 +620,12 @@ export const renderer = createRenderer<
                         }
                       >
                         <div
+                          ref={albumFit.ref}
                           class="stats-engine-album-grid"
                           classList={{
+                            'stats-engine-grid--row': !albumsExpanded(),
                             'stats-engine-list-scroll':
+                              albumsExpanded() &&
                               s().topAlbums.length > PAGE_SIZE,
                           }}
                         >
@@ -561,10 +633,10 @@ export const renderer = createRenderer<
                             each={
                               albumsExpanded()
                                 ? s().topAlbums
-                                : s().topAlbums.slice(0, PAGE_SIZE)
+                                : s().topAlbums.slice(0, albumFit.count())
                             }
                           >
-                            {(album) => (
+                            {(album, index) => (
                               <div
                                 class="stats-engine-album-card stats-engine-album-card--linked"
                                 on:click={() =>
@@ -574,6 +646,9 @@ export const renderer = createRenderer<
                                   )
                                 }
                               >
+                                <div class="stats-engine-rank-badge">
+                                  {index() + 1}
+                                </div>
                                 <Show
                                   when={album.imageSrc}
                                   fallback={
@@ -613,7 +688,8 @@ export const renderer = createRenderer<
                       </Show>
                     </section>
                   </>
-                )}
+                  );
+                }}
               </Show>
             </Show>
           </div>

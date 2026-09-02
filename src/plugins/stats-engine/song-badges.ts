@@ -34,23 +34,96 @@
 //     populated official playlist row by row and every one of them has an
 //     empty secondaryFlexColumns beyond the artist name, unlike the same
 //     songs' rows on their album page. There's nothing to read there, so
-//     for these it's looked up instead: a `/search` for "<title>
-//     <artist>", matched back to the one result row of type "Song" whose
-//     title (and artist, when there's more than one candidate) matches,
-//     then the same plays text is read off *that* row. (An earlier
-//     version of this tried the video's own `/player` "view count"
-//     instead — confirmed live against a real song that this is a
-//     different, much lower number than YouTube Music's own "plays" stat,
-//     e.g. 685K vs the 15M shown on the album page for the same song — so
-//     that path was replaced with this search-and-match one, which reads
-//     the exact same number the rest of the app shows.) That lookup is
-//     ~500-800ms, so it's deliberately scoped: only for rows that have
-//     actually scrolled into view (IntersectionObserver), a few at a time
-//     with a small stagger between dispatches, and cached per videoId for
-//     the rest of the session so nothing is ever looked up twice. This
-//     keeps opening a large playlist fast — badges for on-screen rows
-//     fill in shortly after, off-screen ones don't cost anything until
-//     scrolled to.
+//     for these it's looked up instead, preferring the most reliable
+//     source available:
+//       1. If the row's own data names an album (checked live: some
+//          playlist row shapes carry it as a second secondaryFlexColumns
+//          entry alongside the artist, some don't), resolve that album to
+//          its browse page the same way an album/artist link elsewhere in
+//          this plugin does — a `/search` for "<album> <artist>" matched
+//          to a MUSIC_PAGE_TYPE_ALBUM result — then read the whole
+//          tracklist's plays off *that* page in one shot and cache it by
+//          album, keyed by videoId per track. This is both the most
+//          accurate source (an exact tracklist, not a fuzzy text match)
+//          and the cheapest at scale: one album fetch answers every song
+//          from that album already queued, which is normally most of a
+//          given playlist. Confirmed live this needs more than just the
+//          top search result, in two ways: a famous single or its own
+//          video routinely outranks the specific EP/album it's actually
+//          on, so this also checks further down the results for a
+//          matching album title; and the same album title can resolve to
+//          more than one distinct release with different tracklists
+//          (Björk's "Venus As A Boy" EP has two, different regional
+//          pressings), so every matching one gets fetched and merged
+//          rather than stopping at the first.
+//       2. Otherwise (no album on the row, or the album lookup found
+//          nothing), fall back to a direct `/search` for "<title>
+//          <artist>", matched to the one "Song" result whose title (and
+//          artist, if there's more than one candidate) matches, reading
+//          the plays text off that row. This is noisier — short or
+//          generic titles can fail to surface the right result at all
+//          (confirmed live: Björk's "Undo" doesn't come back as a "Song"
+//          match for any reasonable query wording, only "Undo (Live)" and
+//          other artists' same-titled songs do) — so it's the fallback,
+//          not the primary path.
+//       3. If that still finds nothing, check whether that same search's
+//          *top* result is a "Song"-type card (not a row) for the exact
+//          title/artist. Confirmed live some tracks never appear as a
+//          regular search row under their exact title at all — The
+//          Beatles' "The End (Remastered 2009)" only shows up as a row
+//          titled "The End (2019 Mix)", with the "Remastered 2009" mix
+//          card-only — so tier 2 above misses them entirely. The card
+//          itself carries no plays count, but its own "Go to album" menu
+//          link does point at the exact right edition, which is often a
+//          different, more obscure release than whatever tier 1's
+//          album-title search turns up (that "Remastered 2009" mix lives
+//          on a plain "Abbey Road" release, not the "Super Deluxe Edition"
+//          album-title text matching finds) — so this follows that link
+//          and reads the track's plays off it, same as tier 1.
+//       4. Only if all three plays-based tiers above find nothing at all,
+//          fall back to a "Video" result's own view count: first a row
+//          whose title matches exactly, matched by an *exact* channel-name
+//          match rather than tier 2's substring one. Some older tracks
+//          (e.g. The Temper Trap's "Sweet Disposition") have no "Song"
+//          catalog entry whatsoever, only a "Video" one, so without this a
+//          song with real listen data available would show nothing. But
+//          this is last for a reason: a Video's view count is a different,
+//          usually much lower number than the "plays" stat every other
+//          tier reads — confirmed live comparing "Come Back Down" (Men I
+//          Trust) and "Dawning of the Season" (Magdalena Bay) against
+//          their own album's tracklist, both came out at roughly a fifth
+//          of the real plays figure — so it only runs when nothing more
+//          accurate was found anywhere else.
+//       5. Still nothing? Check whether the search's own top card is a
+//          "Video"-type result (as opposed to tier 3's "Song"-type card)
+//          for the exact title, and read its view count directly.
+//          Confirmed live this is needed for playlist rows whose title is
+//          literally a specific YouTube video's own name — "Wanna Be
+//          Startin' Somethin' (Official Lyric Video)", "Move Me
+//          (Visualiser)", "Baby Be Mine (Audio)" — where the underlying
+//          song exists in the catalog, but only under its plain title
+//          without that suffix, so neither tier 2's row search nor tier
+//          4's row-based video check ever finds an exact text match for
+//          the row's actual title anywhere in the results — the video
+//          itself only ever shows up as that top card.
+//     (An earlier version of this used the video's own `/player` "view
+//     count" instead of either of the above — confirmed live against a
+//     real song that this is a different, much lower number than YouTube
+//     Music's own "plays" stat, e.g. 685K vs the 15M shown on the album
+//     page for the same song — so it was replaced.)
+//     Each lookup is roughly one network round trip (~200-800ms), so every
+//     row that needs one is queued the moment it's scanned — in document
+//     order, which for a freshly rendered playlist is top to bottom — and
+//     worked off a few at a time with a small stagger between dispatches,
+//     cached per videoId for the final answer and per album for the
+//     tracklist fetch, so nothing is ever looked up twice in a session.
+//     (An earlier version only queued a row once it scrolled into view,
+//     via IntersectionObserver — confirmed live this missed rows entirely
+//     on a playlist that opens already scrolled down, since YTM restores
+//     the previous scroll position on return and rows that never crossed
+//     the viewport never queued a lookup at all. Queueing eagerly at scan
+//     time instead means every row's lookup is in flight from the moment
+//     the page renders, regardless of where it opens scrolled to.)
 //
 // Search results and artist "Songs" shelves already render this same
 // number as their own visible column (that's exactly what
@@ -106,6 +179,7 @@ interface QueuedLookup {
   videoId: string;
   title: string;
   artist: string | null;
+  album: string | null;
 }
 const fetchQueue: QueuedLookup[] = [];
 const queuedVideoIds = new Set<string>();
@@ -114,6 +188,17 @@ const queuedVideoIds = new Set<string>();
 // document (which, on a big playlist with many lookups landing close
 // together, added up to real, measurable slowdown).
 const pendingRowsByVideoId = new Map<string, Set<Element>>();
+// "<album>|<artist>" -> in-flight/resolved (normalized title -> plays
+// text) map for that album, or null if the album itself couldn't be
+// resolved. Several tracks from the same album are typically queued
+// together, so this is keyed and cached independently of videoId —
+// caching the promise itself (not just its result) means the first of
+// those tracks to queue triggers the fetch and the rest just wait on it,
+// instead of each firing its own redundant album lookup.
+const albumTrackPlaysCache = new Map<
+  string,
+  Promise<Map<string, string> | null>
+>();
 let activeFetches = 0;
 let dispatchingQueue = false;
 let stopped = false;
@@ -163,20 +248,11 @@ type SearchListItem = {
   playlistItemData?: { videoId?: string };
 };
 
-// Walks a raw /search response looking for one "Song" result whose title
-// (and artist, when given, to tell apart same-titled songs by different
-// artists) matches, then returns whatever column on that row reads like a
-// play/view count — the same text a `ytmusic-responsive-list-item-
-// renderer` for that row would expose as `.secondaryFlexColumns`, just
-// read straight off the raw flexColumns here since there's no live
-// element to ask (confirmed live: the DOM property is derived from this
-// same `flexColumns` array, there's no separate field for it in the
-// network response).
-function extractGlobalPlaysFromSearch(
-  response: unknown,
-  title: string,
-  artist: string | null,
-): string | null {
+// Walks a raw /search response for every row whose title matches the
+// target (there's often several — same title, different artist/edition),
+// returning each as its flexColumns' plain text. Shared by the row-based
+// checks below, so the response only ever gets walked once per lookup.
+function matchingSearchRows(response: unknown, title: string): string[][] {
   const sections =
     (
       response as {
@@ -196,8 +272,7 @@ function extractGlobalPlaysFromSearch(
       ?.sectionListRenderer?.contents ?? [];
 
   const targetTitle = normalize(title);
-  const targetArtist = normalize(artist);
-
+  const matchingRows: string[][] = [];
   for (const section of sections as {
     musicShelfRenderer?: { contents?: unknown[] };
     itemSectionRenderer?: { contents?: unknown[] };
@@ -218,19 +293,414 @@ function extractGlobalPlaysFromSearch(
             ?.map((r) => r.text ?? '')
             .join('') ?? '',
       );
-      const rowTitle = normalize(cols[0]);
-      const rowMeta = normalize(cols[1]); // e.g. "song • björk"
-      if (rowTitle !== targetTitle) continue;
-      if (!rowMeta.startsWith('song')) continue;
-      if (targetArtist && !rowMeta.includes(targetArtist)) continue;
+      if (normalize(cols[0]) === targetTitle) matchingRows.push(cols);
+    }
+  }
+  return matchingRows;
+}
 
-      for (const col of cols) {
-        const text = col.trim();
-        if (text && /\b(plays?|views?)$/i.test(text)) return text;
-      }
+// Tier: an actual "Song" catalog row matching the title (and artist, when
+// there's more than one candidate) — the normal, most reliable case, read
+// straight off the raw flexColumns since there's no live DOM element to
+// ask here (confirmed live: `.secondaryFlexColumns` on the real element is
+// derived from this same array, there's no separate field for it in the
+// network response).
+function extractSongRowPlays(
+  matchingRows: string[][],
+  artist: string | null,
+): string | null {
+  const targetArtist = normalize(artist);
+  for (const cols of matchingRows) {
+    const rowMeta = normalize(cols[1]); // e.g. "song • björk"
+    if (!rowMeta.startsWith('song')) continue;
+    if (targetArtist && !rowMeta.includes(targetArtist)) continue;
+    for (const col of cols) {
+      const text = col.trim();
+      if (text && /\b(plays?|views?)$/i.test(text)) return text;
     }
   }
   return null;
+}
+
+// Last-resort tier: a "Video" result whose channel name is an *exact*
+// match for the target artist, not just a substring. Confirmed live this
+// is needed: some older tracks (e.g. The Temper Trap's "Sweet
+// Disposition") have no separate "Song" catalog entry at all, only a
+// "Video" one, on YouTube Music's own search — so without this, a song
+// with real listen data available would show nothing. But a Video's own
+// stat is a *view count*, a different (often much lower) number than the
+// "plays" stat everywhere else here reads — confirmed live for "Come Back
+// Down" (Men I Trust) and "Dawning of the Season" (Magdalena Bay), whose
+// Video-tier "views" read barely a fifth of their real "plays" number —
+// so this only runs once every plays-based tier above it (including the
+// card-based album lookup) has already come up empty, and the exact
+// channel-name match (rather than "includes", which the Song tier uses)
+// keeps it from picking up an unrelated fan upload that merely mentions
+// the artist.
+function extractVideoRowViews(
+  matchingRows: string[][],
+  artist: string | null,
+): string | null {
+  const targetArtist = normalize(artist);
+  if (!targetArtist) return null;
+  for (const cols of matchingRows) {
+    // e.g. "Video • The Temper Trap • 92M views"
+    const parts = (cols[1] ?? '').split('•').map((p) => p.trim());
+    if (normalize(parts[0]) !== 'video') continue;
+    if (normalize(parts[1]) !== targetArtist) continue;
+    const text = parts[2]?.trim();
+    if (text && /\b(plays?|views?)$/i.test(text)) return text;
+  }
+  return null;
+}
+
+type NetworkManager = {
+  fetch: (endpoint: string, body: Record<string, unknown>) => Promise<unknown>;
+} | null | undefined;
+
+function getNetworkManager(): NetworkManager {
+  return (
+    document.querySelector('ytmusic-app') as unknown as {
+      networkManager?: NetworkManager;
+    } | null
+  )?.networkManager;
+}
+
+type BrowseEndpoint = {
+  browseId?: string;
+  browseEndpointContextSupportedConfigs?: {
+    browseEndpointContextMusicConfig?: { pageType?: string };
+  };
+};
+
+function albumPageBrowseId(endpoint: BrowseEndpoint | undefined): string | null {
+  if (
+    endpoint?.browseEndpointContextSupportedConfigs
+      ?.browseEndpointContextMusicConfig?.pageType !== 'MUSIC_PAGE_TYPE_ALBUM'
+  ) {
+    return null;
+  }
+  return endpoint.browseId ?? null;
+}
+
+// The "card" result (`musicCardShelfRenderer`) is usually the first entry
+// in a search response's sections, but not always — confirmed live a
+// "Did you mean: ..." spelling-suggestion section can occupy that slot
+// instead, pushing the actual card to index 1. Scanning for it rather than
+// assuming a fixed position is what makes this reliable.
+function findCardShelf(sections: unknown[]): Record<string, unknown> | undefined {
+  for (const section of sections) {
+    const shelf = (section as { musicCardShelfRenderer?: Record<string, unknown> })
+      ?.musicCardShelfRenderer;
+    if (shelf) return shelf;
+  }
+  return undefined;
+}
+
+// Same pattern renderer.tsx's goToResolved uses for artist/album links: a
+// `/search` for the name, matched to the top "card" result, checked
+// against the page type we actually want. That top card is only ever the
+// literal best/most-famous match for the raw query text though — checked
+// live, a well-known single or its own music video routinely outranks the
+// specific EP/album release it's actually on (e.g. searching "Venus As A
+// Boy Björk" surfaces the song itself as the card, not the "Venus As A
+// Boy" EP), which left the album unresolved even though it exists. So
+// this also scans the rest of the results for actual album/EP rows (still
+// their own `musicResponsiveListItemRenderer`, same as everywhere else)
+// whose title matches the one we're after.
+//
+// Returns every matching browseId, not just one: also confirmed live that
+// the same album title can point to more than one distinct browseId with
+// *different tracklists* — Björk's "Venus As A Boy" EP has two separate
+// entries (different regional pressings, going by the different mixes
+// each one has), and the specific track being looked up might only be on
+// one of them. resolveAlbumTrackPlays below fetches all of them and
+// merges the results, so it doesn't matter which one happens to come
+// first.
+function extractAlbumBrowseIds(response: unknown, album: string): string[] {
+  const sections =
+    (
+      response as {
+        contents?: {
+          tabbedSearchResultsRenderer?: {
+            tabs?: {
+              tabRenderer?: {
+                content?: { sectionListRenderer?: { contents?: unknown[] } };
+              };
+            }[];
+          };
+        };
+      }
+    )?.contents?.tabbedSearchResultsRenderer?.tabs?.[0]?.tabRenderer?.content
+      ?.sectionListRenderer?.contents ?? [];
+
+  const browseIds = new Set<string>();
+
+  const card = findCardShelf(sections) as
+    | {
+        title?: { runs?: { navigationEndpoint?: { browseEndpoint?: BrowseEndpoint } }[] };
+      }
+    | undefined;
+  const cardBrowseId = albumPageBrowseId(
+    card?.title?.runs?.[0]?.navigationEndpoint?.browseEndpoint,
+  );
+  if (cardBrowseId) browseIds.add(cardBrowseId);
+
+  const targetAlbum = normalize(album);
+  for (const section of sections as {
+    itemSectionRenderer?: { contents?: unknown[] };
+    musicShelfRenderer?: { contents?: unknown[] };
+  }[]) {
+    const items =
+      section.itemSectionRenderer?.contents ??
+      section.musicShelfRenderer?.contents ??
+      [];
+    for (const item of items as {
+      musicResponsiveListItemRenderer?: SearchListItem & {
+        navigationEndpoint?: { browseEndpoint?: BrowseEndpoint };
+      };
+    }[]) {
+      const row = item.musicResponsiveListItemRenderer;
+      if (!row) continue;
+      const browseId = albumPageBrowseId(row.navigationEndpoint?.browseEndpoint);
+      if (!browseId) continue;
+      const rowTitle = normalize(
+        row.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text
+          ?.runs?.map((r) => r.text ?? '')
+          .join(''),
+      );
+      if (rowTitle === targetAlbum) browseIds.add(browseId);
+    }
+  }
+  // Capped: this is meant to catch a handful of alternate pressings, not
+  // fetch every album that has ever shared this title.
+  return [...browseIds].slice(0, 3);
+}
+
+// Tier 3's card check (see file header): the top search result for a
+// "<title> <artist>" query is sometimes a "Song"-type card rather than an
+// album/artist card or a row, for a track whose exact title doesn't appear
+// as a regular row anywhere in the results. The card has no plays count of
+// its own, but its menu's "Go to album" entry links straight to the exact
+// release that track is actually on — read off that album's tracklist the
+// same way tier 1 does.
+type SongCardMenuItem = {
+  menuNavigationItemRenderer?: {
+    text?: { runs?: { text?: string }[] };
+    navigationEndpoint?: { browseEndpoint?: BrowseEndpoint };
+  };
+};
+type SongCardShelf = {
+  title?: { runs?: { text?: string }[] };
+  subtitle?: {
+    runs?: { text?: string; navigationEndpoint?: { browseEndpoint?: BrowseEndpoint } }[];
+  };
+  menu?: { menuRenderer?: { items?: SongCardMenuItem[] } };
+};
+
+function extractSongCardAlbumBrowseId(
+  response: unknown,
+  title: string,
+  artist: string | null,
+): string | null {
+  const sections =
+    (
+      response as {
+        contents?: {
+          tabbedSearchResultsRenderer?: {
+            tabs?: {
+              tabRenderer?: {
+                content?: { sectionListRenderer?: { contents?: unknown[] } };
+              };
+            }[];
+          };
+        };
+      }
+    )?.contents?.tabbedSearchResultsRenderer?.tabs?.[0]?.tabRenderer?.content
+      ?.sectionListRenderer?.contents ?? [];
+
+  const card = findCardShelf(sections) as SongCardShelf | undefined;
+  if (!card) return null;
+
+  const cardTitle = card.title?.runs?.map((r) => r.text ?? '').join('') ?? '';
+  if (normalize(cardTitle) !== normalize(title)) return null;
+
+  // Matched the same way tier 2's row check matches "Song • <artist>" text
+  // (see extractGlobalPlaysFromSearch) — a substring check on the whole
+  // subtitle rather than picking out one linked run, because a collab
+  // credit like "ODESZA & Yellow House" is confirmed live to split across
+  // *separate* artist-linked runs ("ODESZA", " & ", "Yellow House"), so no
+  // single run ever carries the full credited name to compare against.
+  const subtitleText = normalize(
+    (card.subtitle?.runs ?? []).map((r) => r.text ?? '').join(''),
+  );
+  if (!subtitleText.startsWith('song')) return null;
+  if (artist && !subtitleText.includes(normalize(artist))) return null;
+
+  for (const item of card.menu?.menuRenderer?.items ?? []) {
+    const nav = item.menuNavigationItemRenderer;
+    const text = nav?.text?.runs?.map((r) => r.text ?? '').join('') ?? '';
+    if (text !== 'Go to album') continue;
+    const browseId = albumPageBrowseId(nav?.navigationEndpoint?.browseEndpoint);
+    if (browseId) return browseId;
+  }
+  return null;
+}
+
+// Last-resort tier, alongside extractVideoRowViews below: the top card
+// itself is sometimes a "Video"-type result (not "Song"), for a title that
+// doesn't exist as a plain row anywhere in the results at all. Confirmed
+// live for playlist rows whose own title carries a video-upload suffix —
+// "Wanna Be Startin' Somethin' (Official Lyric Video)", "Move Me
+// (Visualiser)", "Baby Be Mine (Audio)" — these are literally that YouTube
+// video's own title, not a song edition, so no Song or Video row under the
+// exact same text exists to match against (the underlying song does, but
+// always without the suffix, e.g. plain "Wanna Be Startin' Somethin'").
+// The card for that exact query is that same video though, so this reads
+// its view count straight off the card instead of a row — same caveat as
+// extractVideoRowViews (a view count, not a plays count), and same
+// substring artist match as the Song-card tier above (a collab credit can
+// split across separate runs, see that tier's comment) rather than the Row
+// tier's exact match, since this is reading an actual official-artist
+// result rather than a fan-uploaded row's channel name.
+function extractVideoCardViews(
+  response: unknown,
+  title: string,
+  artist: string | null,
+): string | null {
+  const sections =
+    (
+      response as {
+        contents?: {
+          tabbedSearchResultsRenderer?: {
+            tabs?: {
+              tabRenderer?: {
+                content?: { sectionListRenderer?: { contents?: unknown[] } };
+              };
+            }[];
+          };
+        };
+      }
+    )?.contents?.tabbedSearchResultsRenderer?.tabs?.[0]?.tabRenderer?.content
+      ?.sectionListRenderer?.contents ?? [];
+
+  const card = findCardShelf(sections) as SongCardShelf | undefined;
+  if (!card) return null;
+
+  const cardTitle = card.title?.runs?.map((r) => r.text ?? '').join('') ?? '';
+  if (normalize(cardTitle) !== normalize(title)) return null;
+
+  const subtitleRuns = card.subtitle?.runs ?? [];
+  const subtitleText = normalize(subtitleRuns.map((r) => r.text ?? '').join(''));
+  if (!subtitleText.startsWith('video')) return null;
+  if (!artist || !subtitleText.includes(normalize(artist))) return null;
+
+  for (const run of subtitleRuns) {
+    const text = run.text?.trim();
+    if (text && /\b(plays?|views?)$/i.test(text)) return text;
+  }
+  return null;
+}
+
+// Walks an album's /browse response for every track row and the plays
+// text on it, keyed by normalized title. The exact shape nests a couple
+// of levels deep (`twoColumnBrowseResultsRenderer.secondaryContents...`)
+// and isn't worth hard-coding — confirmed live it's flexColumns again,
+// same as everywhere else in this file, so this just walks the whole
+// response looking for that shape rather than a fixed path.
+function extractAlbumTrackPlaysMap(response: unknown): Map<string, string> {
+  const map = new Map<string, string>();
+
+  function walk(node: unknown): void {
+    if (!node || typeof node !== 'object') return;
+    const row = (node as { musicResponsiveListItemRenderer?: SearchListItem })
+      .musicResponsiveListItemRenderer;
+    if (row) {
+      const cols = (row.flexColumns ?? []).map(
+        (c) =>
+          c.musicResponsiveListItemFlexColumnRenderer?.text?.runs
+            ?.map((r) => r.text ?? '')
+            .join('') ?? '',
+      );
+      const title = normalize(cols[0]);
+      for (const col of cols) {
+        const text = col.trim();
+        if (title && text && /\b(plays?|views?)$/i.test(text)) {
+          map.set(title, text);
+          break;
+        }
+      }
+      return;
+    }
+    for (const value of Object.values(node as Record<string, unknown>)) {
+      walk(value);
+    }
+  }
+  walk(response);
+  return map;
+}
+
+// Same cache as resolveAlbumTrackPlays below, just keyed by browseId
+// directly instead of "<album>|<artist>" — a "browseId:" prefix keeps the
+// two key shapes from ever colliding. This is its own entry point (used by
+// tier 3's card-based lookup, which already has a browseId in hand and no
+// album/artist name to key by) but also what resolveAlbumTrackPlays calls
+// per browseId, so a release reached both ways only gets fetched once.
+function albumTrackPlaysByBrowseId(
+  browseId: string,
+): Promise<Map<string, string> | null> {
+  const key = `browseId:${browseId}`;
+  let promise = albumTrackPlaysCache.get(key);
+  if (!promise) {
+    promise = (async () => {
+      try {
+        const browseResponse = await getNetworkManager()?.fetch('/browse', {
+          browseId,
+        });
+        return extractAlbumTrackPlaysMap(browseResponse);
+      } catch (err) {
+        console.error('[stats-engine] failed to resolve album plays', err);
+        return null;
+      }
+    })();
+    albumTrackPlaysCache.set(key, promise);
+  }
+  return promise;
+}
+
+function resolveAlbumTrackPlays(
+  album: string,
+  artist: string | null,
+): Promise<Map<string, string> | null> {
+  const key = `${normalize(album)}|${normalize(artist)}`;
+  let promise = albumTrackPlaysCache.get(key);
+  if (!promise) {
+    promise = (async () => {
+      try {
+        const query = artist ? `${album} ${artist}` : album;
+        const searchResponse = await getNetworkManager()?.fetch('/search', {
+          query,
+        });
+        const browseIds = extractAlbumBrowseIds(searchResponse, album);
+        if (browseIds.length === 0) return null;
+
+        const merged = new Map<string, string>();
+        for (const browseId of browseIds) {
+          const trackMap = await albumTrackPlaysByBrowseId(browseId);
+          if (!trackMap) continue;
+          for (const [trackTitle, text] of trackMap) {
+            if (!merged.has(trackTitle)) merged.set(trackTitle, text);
+          }
+        }
+        return merged;
+      } catch (err) {
+        console.error('[stats-engine] failed to resolve album plays', err);
+        return null;
+      }
+    })();
+    albumTrackPlaysCache.set(key, promise);
+  }
+  return promise;
 }
 
 function dispatchQueuedFetches() {
@@ -254,22 +724,44 @@ function dispatchQueuedFetches() {
   void step();
 }
 
-async function fetchGlobalPlays({ videoId, title, artist }: QueuedLookup) {
+async function fetchGlobalPlays({ videoId, title, artist, album }: QueuedLookup) {
   try {
-    const app = document.querySelector('ytmusic-app') as unknown as {
-      networkManager?: {
-        fetch: (
-          endpoint: string,
-          body: Record<string, unknown>,
-        ) => Promise<unknown>;
-      };
-    } | null;
-    const query = artist ? `${title} ${artist}` : title;
-    const response = await app?.networkManager?.fetch('/search', { query });
-    fetchedGlobalPlays.set(
-      videoId,
-      extractGlobalPlaysFromSearch(response, title, artist),
-    );
+    let text: string | null = null;
+
+    if (album) {
+      const trackPlays = await resolveAlbumTrackPlays(album, artist);
+      text = trackPlays?.get(normalize(title)) ?? null;
+    }
+
+    if (text === null) {
+      const query = artist ? `${title} ${artist}` : title;
+      const response = await getNetworkManager()?.fetch('/search', { query });
+      const matchingRows = matchingSearchRows(response, title);
+
+      text = extractSongRowPlays(matchingRows, artist);
+
+      if (text === null) {
+        const cardBrowseId = extractSongCardAlbumBrowseId(response, title, artist);
+        if (cardBrowseId) {
+          const trackPlays = await albumTrackPlaysByBrowseId(cardBrowseId);
+          text = trackPlays?.get(normalize(title)) ?? null;
+        }
+      }
+
+      // Last resort — a view count, not a plays count (see
+      // extractVideoRowViews), so only once every plays-based source above
+      // has come up with nothing at all. Row-based first, then the card
+      // itself (extractVideoCardViews) for a title that only exists as
+      // that top card, never as a row under the same exact text.
+      if (text === null) {
+        text = extractVideoRowViews(matchingRows, artist);
+      }
+      if (text === null) {
+        text = extractVideoCardViews(response, title, artist);
+      }
+    }
+
+    fetchedGlobalPlays.set(videoId, text);
   } catch (err) {
     console.error('[stats-engine] failed to look up global play count', err);
     fetchedGlobalPlays.set(videoId, null);
@@ -283,6 +775,20 @@ async function fetchGlobalPlays({ videoId, title, artist }: QueuedLookup) {
         if (row.isConnected) injectListItemBadge(row);
       }
     }
+    // A freed concurrency slot needs to re-arm the dispatcher itself —
+    // dispatchQueuedFetches only kicks off a fresh run when it's called
+    // while idle, and its own loop stops as soon as it's started
+    // MAX_CONCURRENT_FETCHES fetches without waiting for any to finish.
+    // Confirmed live this was the actual bug behind queueing every row up
+    // front: the loop fired its first four fetches and then simply never
+    // ran again, since nothing after that point called it — under the old
+    // visibility-gated design this stayed hidden because a fresh
+    // IntersectionObserver hit (from scrolling) kept re-triggering it by
+    // coincidence, often enough after the previous batch had cleared that
+    // it looked like a steady trickle. Queueing a whole playlist at once
+    // removed that coincidental trigger, so the queue stalled after the
+    // first four rows and every row after them just sat there forever.
+    if (!stopped) dispatchQueuedFetches();
   }
 }
 
@@ -298,11 +804,6 @@ function queueGlobalPlaysFetch(lookup: QueuedLookup) {
   fetchQueue.push(lookup);
   dispatchQueuedFetches();
 }
-
-// Fires once a row that's still waiting on a global count actually
-// scrolls into view — see the file header for why this is on-demand
-// rather than looked up for every row up front.
-let visibilityObserver: IntersectionObserver | null = null;
 
 function buildBadgeWrapper(
   personalCount: number | undefined,
@@ -409,8 +910,9 @@ function injectListItemBadge(row: Element) {
     !nativelyVisible && videoId ? fetchedGlobalPlays.get(videoId) : undefined;
   const globalText = embeddedGlobalText ?? fetchedGlobalText ?? null;
 
-  // Nothing embedded and nothing looked up yet — this row is a candidate
-  // for an on-demand lookup once it's actually visible, not before.
+  // Nothing embedded and nothing looked up yet — queue it now rather than
+  // waiting for anything else (see the file header on why this is eager,
+  // not visibility-gated).
   if (
     !nativelyVisible &&
     !embeddedGlobalText &&
@@ -422,28 +924,43 @@ function injectListItemBadge(row: Element) {
       data?.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer
         ?.text?.runs?.map((r) => r.text ?? '')
         .join('');
-    const artist =
+    const secondaryColumns =
       (
         row as unknown as {
           secondaryFlexColumns?: { text?: { runs?: { text?: string }[] } }[];
         }
-      ).secondaryFlexColumns?.[0]?.text?.runs
-        ?.map((r) => r.text ?? '')
-        .join('')
-        .trim() || null;
+      ).secondaryFlexColumns ?? [];
+    const columnTexts = secondaryColumns.map(
+      (c) =>
+        c.text?.runs
+          ?.map((r) => r.text ?? '')
+          .join('')
+          .trim() ?? '',
+    );
+    const artist = columnTexts[0] || null;
+    // Whichever other column isn't the artist and doesn't itself read like
+    // a plays count is the best guess at an album name — some playlist
+    // row shapes carry one here alongside the artist, some leave it
+    // blank (see the file header); when there isn't one, `album` stays
+    // null and the lookup falls back to searching by title instead.
+    const album =
+      columnTexts
+        .slice(1)
+        .find(
+          (text) =>
+            text &&
+            normalize(text) !== normalize(artist) &&
+            !/\b(plays?|views?)$/i.test(text),
+        ) || null;
     if (title) {
-      (row as unknown as { __statsEngineLookup?: QueuedLookup })
-        .__statsEngineLookup = { videoId, title, artist };
       let pending = pendingRowsByVideoId.get(videoId);
       if (!pending) {
         pending = new Set();
         pendingRowsByVideoId.set(videoId, pending);
       }
       pending.add(row);
-      visibilityObserver?.observe(row);
+      queueGlobalPlaysFetch({ videoId, title, artist, album });
     }
-  } else {
-    visibilityObserver?.unobserve(row);
   }
 
   applyBadge(
@@ -501,25 +1018,6 @@ export function startSongBadges(ctx: RendererContext<StatsEngineConfig>) {
   void refreshCounts();
   const interval = setInterval(() => void refreshCounts(), REFRESH_INTERVAL_MS);
 
-  visibilityObserver = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        const lookup = (
-          entry.target as unknown as { __statsEngineLookup?: QueuedLookup }
-        ).__statsEngineLookup;
-        visibilityObserver?.unobserve(entry.target);
-        if (lookup) queueGlobalPlaysFetch(lookup);
-      }
-    },
-    // A little margin so a row starts its lookup just before it's
-    // actually on screen rather than the exact instant it crosses the
-    // edge — kept small so opening a big playlist doesn't queue dozens of
-    // lookups for rows still well out of view; the rest queue naturally
-    // as the user scrolls to them.
-    { rootMargin: '50px' },
-  );
-
   // Rows come and go constantly (navigating pages, search-as-you-type,
   // queue changes) — re-scan shortly after the DOM settles rather than on
   // every single mutation. attributes:false keeps this from firing on
@@ -547,10 +1045,17 @@ export function startSongBadges(ctx: RendererContext<StatsEngineConfig>) {
       stopped = true;
       clearInterval(interval);
       observer.disconnect();
-      visibilityObserver?.disconnect();
-      visibilityObserver = null;
       fetchQueue.length = 0;
       queuedVideoIds.clear();
+      // Clearing these matters: they're module-level, so without this a
+      // stop()+start() cycle (the plugin being toggled off/on, or a dev
+      // hot-reload that re-invokes the renderer) would otherwise leave a
+      // prior run's cached values — including ones cached wrong by a bug
+      // that's since been fixed — in place for the rest of the process.
+      fetchedGlobalPlays.clear();
+      pendingRowsByVideoId.clear();
+      albumTrackPlaysCache.clear();
+      activeFetches = 0;
       document
         .querySelectorAll(`.${WRAPPER_CLASS}`)
         .forEach((el) => el.remove());

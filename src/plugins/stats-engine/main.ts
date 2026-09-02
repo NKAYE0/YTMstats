@@ -117,11 +117,14 @@ export const backend = createBackend<
         return;
       }
 
-      // Same rule the scrobbler plugin uses: halfway through the track, or
-      // 4 minutes in, whichever comes first.
+      // Counts a play at the halfway point, or 1 minute in, whichever
+      // comes first. Originally matched the scrobbler plugin's own
+      // (longer) threshold; changed to count sooner for this plugin's own
+      // stats, so the two no longer agree — that's fine, they're
+      // independent counters.
       const playThreshold = Math.min(
         Math.ceil(songInfo.songDuration / 2),
-        4 * 60,
+        60,
       );
       const elapsed = songInfo.elapsedSeconds ?? 0;
       if (playThreshold <= elapsed) return;
