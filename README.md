@@ -39,6 +39,6 @@ These counts are shown directly alongside songs in areas such as playlists, sear
 
 ## 🚀 Latest Release
 
-**[Download the latest release](#)**
+**[Download the latest release](https://github.com/NKAYE0/YTMstats/releases/latest)**
 
 Download and install the latest version of YTMstats.
